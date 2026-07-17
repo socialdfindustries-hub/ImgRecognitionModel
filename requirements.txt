@@ -1,0 +1,19 @@
+# Pinned for reproducibility and supply-chain integrity.
+# Regenerate the locked+hashed file with:  pip-compile --generate-hashes requirements.txt
+# Audit before every deploy:                pip-audit -r requirements.txt
+#
+# NOTE: torch/torchvision versions here are for the M4 (training). The JETSON
+# uses NVIDIA's JetPack-provided torch build — pin those to your JetPack version
+# separately; do NOT pip-install these two on the Jetson.
+
+torch==2.3.1
+torchvision==0.18.1
+safetensors==0.4.3          # replaces pickle .pt/.pth — no code execution on load
+cryptography==42.0.8        # Ed25519 model signing (M4 signs / Jetson verifies)
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+albumentations==1.4.10
+pillow==10.3.0
+
+# dev / security tooling
+pip-audit==2.7.3

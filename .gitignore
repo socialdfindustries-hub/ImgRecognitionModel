@@ -1,0 +1,24 @@
+# --- SECRETS: never commit signing keys ---
+keys/*
+!keys/.gitkeep
+*_ed25519
+*.pem
+
+# --- model artifacts (large / sensitive weights) ---
+dist/
+*.safetensors
+*.onnx
+*.engine
+*.pt
+*.pth
+
+# --- datasets (untrusted, large; pin via hash manifests instead) ---
+data/
+!data/manifests/
+
+# --- python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
