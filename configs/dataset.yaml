@@ -1,0 +1,19 @@
+# Dataset definition — EDIT THIS for your mission.
+# Class order defines the integer ids used in labels (0-based). Never reorder
+# after labeling starts — it silently remaps every existing label.
+
+names:
+  0: person
+  1: vehicle
+  2: building
+  3: aircraft
+  4: boat
+  # add/replace with YOUR mission classes; keep the list tight (see DATA_PLAN.md)
+
+# Filled in by scripts/ingest_dataset.py — do not edit by hand.
+paths:
+  train_images: data/train/images
+  train_labels: data/train/labels
+  val_images: data/val/images
+  val_labels: data/val/labels
+  manifests: data/manifests
