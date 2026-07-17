@@ -40,7 +40,11 @@ def main():
     ap.add_argument("--manifest", type=Path, default=None,
                     help="dataset hash manifest to verify before training")
     ap.add_argument("--pretrained-backbone", type=Path, default=None,
-                    help="verified safetensors ResNet weights (transfer learning)")
+                    help="verified safetensors ResNet weights (transfer learning). "
+                         "Deviates from the from-scratch decision — requires "
+                         "--allow-pretrained. Intended only for baseline benchmarking.")
+    ap.add_argument("--allow-pretrained", action="store_true",
+                    help="explicit opt-in required to use --pretrained-backbone")
     ap.add_argument("--epochs", type=int, default=50)
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--imgsz", type=int, default=1280)
@@ -49,6 +53,22 @@ def main():
     ap.add_argument("--signing-key", type=Path, default=Path("keys/model_ed25519"))
     ap.add_argument("--out", type=Path, default=Path("dist/detector.safetensors"))
     args = ap.parse_args()
+
+    # --- from-scratch guard -------------------------------------------------
+    # Project decision: train fully from scratch (own 100% of weights, air-gap
+    # safe). A pretrained backbone can ONLY be used as an explicit, acknowledged
+    # baseline — it can never sneak into a deployed model by accident.
+    if args.pretrained_backbone is not None and not args.allow_pretrained:
+        raise SystemExit(
+            "refusing --pretrained-backbone without --allow-pretrained.\n"
+            "This project trains FROM SCRATCH by default (see docs/DATA_PLAN.md).\n"
+            "Add --allow-pretrained only to train a THROWAWAY transfer-learning\n"
+            "baseline for comparison — never for the deployed model.")
+    from_scratch = args.pretrained_backbone is None
+    if from_scratch:
+        print("mode: FROM SCRATCH (no pretrained weights — 100% self-trained)")
+    else:
+        print("mode: BASELINE with pretrained backbone — NOT for deployment")
 
     device = pick_device()
     print(f"device: {device}")
@@ -86,7 +106,7 @@ def main():
         if args.signing_key.exists():
             save_model(model.state_dict(), args.out, args.signing_key,
                        metadata={"epoch": epoch, "num_classes": args.num_classes,
-                                 "imgsz": args.imgsz})
+                                 "imgsz": args.imgsz, "from_scratch": from_scratch})
             print(f"  saved signed checkpoint -> {args.out}")
         else:
             print("  WARNING: no signing key; checkpoint NOT saved. Run scripts/gen_keys.py")
