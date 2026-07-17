@@ -1,0 +1,96 @@
+"""
+train.py — train the custom detector on the M4 Pro.
+
+Run:
+  ./.venv/bin/python -m src.train \
+      --images data/train/images --labels data/train/labels \
+      --num-classes 10 --epochs 50 --imgsz 1280 \
+      --manifest data/manifests/train.json
+
+Checkpoints are written as SIGNED safetensors via secure_io (no pickle, ever) so
+the same file can be verified and loaded on the Jetson without a trust gap.
+"""
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import torch
+from torch.utils.data import DataLoader
+
+from .data.dataset import AerialDetectionDataset, collate
+from .model import CustomDetector
+from .model.loss import DetectionLoss
+from .secure_io import save_model
+
+
+def pick_device() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--images", type=Path, required=True)
+    ap.add_argument("--labels", type=Path, required=True)
+    ap.add_argument("--num-classes", type=int, required=True)
+    ap.add_argument("--manifest", type=Path, default=None,
+                    help="dataset hash manifest to verify before training")
+    ap.add_argument("--pretrained-backbone", type=Path, default=None,
+                    help="verified safetensors ResNet weights (transfer learning)")
+    ap.add_argument("--epochs", type=int, default=50)
+    ap.add_argument("--batch", type=int, default=4)
+    ap.add_argument("--imgsz", type=int, default=1280)
+    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--signing-key", type=Path, default=Path("keys/model_ed25519"))
+    ap.add_argument("--out", type=Path, default=Path("dist/detector.safetensors"))
+    args = ap.parse_args()
+
+    device = pick_device()
+    print(f"device: {device}")
+
+    ds = AerialDetectionDataset(args.images, args.labels, args.imgsz, args.manifest)
+    dl = DataLoader(ds, batch_size=args.batch, shuffle=True,
+                    num_workers=args.workers, collate_fn=collate,
+                    pin_memory=(device == "cuda"))
+
+    model = CustomDetector(args.num_classes, args.pretrained_backbone).to(device)
+    criterion = DetectionLoss(args.num_classes)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    for epoch in range(args.epochs):
+        model.train()
+        running = 0.0
+        for step, (imgs, targets) in enumerate(dl):
+            imgs = imgs.to(device)
+            out = model(imgs)
+            losses = criterion(out, targets)
+            opt.zero_grad()
+            losses["loss"].backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+            opt.step()
+            running += float(losses["loss"])
+            if step % 20 == 0:
+                print(f"e{epoch} s{step} loss={float(losses['loss']):.4f} "
+                      f"cls={float(losses['cls']):.4f} reg={float(losses['reg']):.4f} "
+                      f"pos={losses['num_pos']}")
+        sched.step()
+        print(f"epoch {epoch} mean_loss={running / max(len(dl),1):.4f}")
+
+        if args.signing_key.exists():
+            save_model(model.state_dict(), args.out, args.signing_key,
+                       metadata={"epoch": epoch, "num_classes": args.num_classes,
+                                 "imgsz": args.imgsz})
+            print(f"  saved signed checkpoint -> {args.out}")
+        else:
+            print("  WARNING: no signing key; checkpoint NOT saved. Run scripts/gen_keys.py")
+
+
+if __name__ == "__main__":
+    main()
