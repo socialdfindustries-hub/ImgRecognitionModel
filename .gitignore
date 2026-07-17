@@ -16,6 +16,10 @@ dist/
 data/
 !data/manifests/
 
+# --- scratch / prediction outputs ---
+scratch_*.jpg
+prediction*.jpg
+
 # --- python ---
 __pycache__/
 *.pyc
