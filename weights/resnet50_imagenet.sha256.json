@@ -1,0 +1,5 @@
+{
+  "file": "resnet50_imagenet.safetensors",
+  "sha256": "30f57ada2f100011a4bd38000df906d6354688a8ca599be580337151c3c5f6a3",
+  "source": "torchvision ResNet50_Weights.IMAGENET1K_V2"
+}
