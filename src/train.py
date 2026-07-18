@@ -88,12 +88,18 @@ def main():
         model.train()
         running = 0.0
         for step, (imgs, targets) in enumerate(dl):
+            # linear LR warmup over the first epoch — from-scratch detection
+            # training diverges without it (see scripts/demo_detect.py).
+            if epoch == 0:
+                warm = min(1.0, (step + 1) / max(len(dl), 1))
+                for g in opt.param_groups:
+                    g["lr"] = args.lr * warm
             imgs = imgs.to(device)
             out = model(imgs)
             losses = criterion(out, targets)
             opt.zero_grad()
             losses["loss"].backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             running += float(losses["loss"])
             if step % 20 == 0:

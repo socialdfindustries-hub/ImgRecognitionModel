@@ -11,6 +11,7 @@ Security-relevant notes:
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import torch
@@ -28,8 +29,13 @@ class FPNNeck(nn.Module):
         super().__init__()
         self.lateral = nn.ModuleList(
             nn.Conv2d(c, out_channels, 1) for c in in_channels)
+        # GroupNorm after the smooth conv keeps FPN activations bounded so the
+        # from-scratch neck doesn't diverge. GroupNorm is batch-independent
+        # (stable at small batch) and exports cleanly to ONNX/TensorRT.
         self.smooth = nn.ModuleList(
-            nn.Conv2d(out_channels, out_channels, 3, padding=1)
+            nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, 3, padding=1),
+                nn.GroupNorm(32, out_channels))
             for _ in in_channels)
 
     def forward(self, feats: list[torch.Tensor]) -> list[torch.Tensor]:
@@ -44,13 +50,37 @@ class FPNNeck(nn.Module):
 class DetectHead(nn.Module):
     """Per-scale prediction of box regressions + class logits (anchor-based)."""
 
-    def __init__(self, in_channels: int, num_classes: int, num_anchors: int = 3):
+    def __init__(self, in_channels: int, num_classes: int, num_anchors: int = 3,
+                 prior: float = 0.01):
         super().__init__()
+        # Conv towers WITH GroupNorm before the final predictors. The norm keeps
+        # activations bounded so neck/head training doesn't diverge (this was the
+        # root cause of loss blow-up). GroupNorm is batch-independent and
+        # ONNX/TensorRT-friendly.
+        self.cls_tower = self._tower(in_channels)
+        self.reg_tower = self._tower(in_channels)
         self.cls = nn.Conv2d(in_channels, num_anchors * num_classes, 3, padding=1)
         self.reg = nn.Conv2d(in_channels, num_anchors * 4, 3, padding=1)
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.normal_(m.weight, std=0.01)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+        # Focal-loss prior-bias: start the cls head predicting ~`prior` fg prob,
+        # so the thousands of background anchors don't dominate the early gradient.
+        nn.init.constant_(self.cls.bias, -math.log((1 - prior) / prior))
+
+    @staticmethod
+    def _tower(ch: int, n: int = 2):
+        layers = []
+        for _ in range(n):
+            layers += [nn.Conv2d(ch, ch, 3, padding=1),
+                       nn.GroupNorm(32, ch), nn.ReLU(inplace=True)]
+        return nn.Sequential(*layers)
 
     def forward(self, feats: list[torch.Tensor]):
-        return [(self.cls(f), self.reg(f)) for f in feats]
+        return [(self.cls(self.cls_tower(f)), self.reg(self.reg_tower(f)))
+                for f in feats]
 
 
 class CustomDetector(nn.Module):
