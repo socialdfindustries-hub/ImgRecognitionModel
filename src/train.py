@@ -52,6 +52,9 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--signing-key", type=Path, default=Path("keys/model_ed25519"))
     ap.add_argument("--out", type=Path, default=Path("dist/detector.safetensors"))
+    ap.add_argument("--resume", type=Path, default=None,
+                    help="signed checkpoint to CONTINUE training from (verified via "
+                         "the .pub key). Lets you train in chunks across sessions.")
     args = ap.parse_args()
 
     # --- from-scratch guard -------------------------------------------------
@@ -79,6 +82,12 @@ def main():
                     pin_memory=(device == "cuda"))
 
     model = CustomDetector(args.num_classes, args.pretrained_backbone).to(device)
+    if args.resume is not None:
+        from .secure_io import load_model
+        pub = Path(str(args.signing_key) + ".pub")
+        sd = load_model(args.resume, pub, device=device)   # verifies signature first
+        model.load_state_dict(sd)
+        print(f"resumed from {args.resume} (signature verified) — continuing training")
     criterion = DetectionLoss(args.num_classes)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
@@ -99,7 +108,11 @@ def main():
             losses = criterion(out, targets)
             opt.zero_grad()
             losses["loss"].backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            # Robust gradient clipping. clip_grad_value_ is a hard per-element cap
+            # that can't be miscomputed (the fused foreach norm path misbehaves on
+            # MPS, letting the reg head diverge). Keep the norm clip too, foreach off.
+            torch.nn.utils.clip_grad_value_(model.parameters(), 5.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=False)
             opt.step()
             running += float(losses["loss"])
             if step % 20 == 0:
