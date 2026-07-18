@@ -13,8 +13,10 @@ dist/
 *.pth
 
 # --- datasets (untrusted, large; pin via hash manifests instead) ---
-data/
-!data/manifests/
+# NOTE: leading slash anchors this to the REPO ROOT only, so it ignores the
+# top-level dataset dir but NOT the src/data/ source package.
+/data/
+!/data/manifests/
 
 # --- scratch / prediction outputs ---
 scratch_*.jpg
