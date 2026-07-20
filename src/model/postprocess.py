@@ -56,12 +56,18 @@ def detections_from_outputs(head_outputs, num_classes, imgsz,
     return boxes[nms_keep], scores[nms_keep], labels[nms_keep]
 
 
-def tile_image(img: torch.Tensor, tile: int, overlap: int = 0):
-    """Yield (tile_tensor, x_off, y_off) covering a C,H,W image.
-    Small aerial objects survive better tiled than downscaled to one frame."""
+def tile_image(img: torch.Tensor, tile: int, overlap: int | None = None):
+    """Yield (tile_tensor, x_off, y_off) covering a C,H,W image, with OVERLAP so an
+    object straddling a tile edge is fully contained in at least one tile (else it
+    gets cut and missed). Default overlap = 20% of the tile. Small aerial objects
+    survive far better tiled than downscaled to one frame."""
     _, H, W = img.shape
-    step = tile - overlap
-    for y in range(0, max(H - overlap, 1), step):
-        for x in range(0, max(W - overlap, 1), step):
+    if overlap is None:
+        overlap = max(tile // 5, 1)          # 20% overlap
+    step = max(tile - overlap, 1)
+    ys = list(range(0, max(H - overlap, 1), step))
+    xs = list(range(0, max(W - overlap, 1), step))
+    for y in ys:
+        for x in xs:
             y2, x2 = min(y + tile, H), min(x + tile, W)
             yield img[:, y:y2, x:x2], x, y

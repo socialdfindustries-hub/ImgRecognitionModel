@@ -65,9 +65,13 @@ def main():
 
     img, bgr, orig_wh = load_image(args.image, args.imgsz)
 
+    import time
+    from torchvision.ops import batched_nms
     if args.tile and args.tile < args.imgsz:
         boxes, scores, labels = [], [], []
-        for tile, xo, yo in tile_image(img, args.tile):
+        tiles = list(tile_image(img, args.tile))
+        t0 = time.time()
+        for tile, xo, yo in tiles:
             pad = torch.zeros(3, args.tile, args.tile)
             pad[:, :tile.shape[1], :tile.shape[2]] = tile
             out = model(pad.unsqueeze(0).to(device))
@@ -77,10 +81,20 @@ def main():
         boxes = torch.cat(boxes) if boxes else torch.empty(0, 4)
         scores = torch.cat(scores) if scores else torch.empty(0)
         labels = torch.cat(labels) if labels else torch.empty(0, dtype=torch.int64)
+        # MERGE across tiles: an object in an overlap zone was detected in 2+ tiles
+        # -> one global NMS removes the duplicates.
+        if boxes.numel():
+            keep = batched_nms(boxes.cpu(), scores.cpu(), labels.cpu(), 0.5)
+            boxes, scores, labels = boxes[keep], scores[keep], labels[keep]
+        dt = time.time() - t0
+        print(f"tiled: {len(tiles)} tiles, {dt:.2f}s  (~{1/max(dt,1e-6):.1f} FPS) "
+              f"vs whole-frame ~{len(tiles)}x faster but coarser")
     else:
+        t0 = time.time()
         out = model(img.unsqueeze(0).to(device))
         boxes, scores, labels = detections_from_outputs(
             out, args.num_classes, args.imgsz, args.score)
+        print(f"whole-frame: 1 pass, {time.time()-t0:.2f}s (~{1/max(time.time()-t0,1e-6):.1f} FPS)")
 
     print(f"{len(boxes)} detections above score={args.score}")
     annotated = draw(bgr, boxes.cpu(), scores.cpu(), labels.cpu(), args.imgsz, orig_wh)
