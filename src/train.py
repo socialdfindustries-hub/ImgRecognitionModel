@@ -111,7 +111,7 @@ def main():
             # Robust gradient clipping. clip_grad_value_ is a hard per-element cap
             # that can't be miscomputed (the fused foreach norm path misbehaves on
             # MPS, letting the reg head diverge). Keep the norm clip too, foreach off.
-            torch.nn.utils.clip_grad_value_(model.parameters(), 5.0)
+            torch.nn.utils.clip_grad_value_(model.parameters(), 2.0)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=False)
             opt.step()
             running += float(losses["loss"])

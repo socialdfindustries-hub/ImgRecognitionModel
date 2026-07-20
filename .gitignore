@@ -28,3 +28,9 @@ __pycache__/
 .venv/
 venv/
 .env
+
+# local training scratch (not for the repo)
+data_src/
+*.log
+watch_training.sh
+TRAINING_DONE.txt
