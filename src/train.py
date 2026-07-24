@@ -48,6 +48,14 @@ def main():
     ap.add_argument("--epochs", type=int, default=50)
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--imgsz", type=int, default=1280)
+    ap.add_argument("--tile", type=int, default=1024,
+                    help="full-res crop window for training (SAHI-style small-object "
+                         "sampling); the crop is resized to --imgsz. 0 = whole-frame "
+                         "resize (no tiling). Objects keep native pixel scale when "
+                         "tile>=imgsz — the main lever for tiny objects at altitude.")
+    ap.add_argument("--no-augment", action="store_true",
+                    help="disable train-time augmentation (tile crop, flip, "
+                         "brightness/contrast). Use for a whole-frame no-aug baseline.")
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--signing-key", type=Path, default=Path("keys/model_ed25519"))
@@ -76,7 +84,11 @@ def main():
     device = pick_device()
     print(f"device: {device}")
 
-    ds = AerialDetectionDataset(args.images, args.labels, args.imgsz, args.manifest)
+    augment = not args.no_augment
+    ds = AerialDetectionDataset(args.images, args.labels, args.imgsz, args.manifest,
+                                train=augment, tile=(args.tile if augment else 0))
+    print(f"data: {len(ds)} images | augment={augment} "
+          f"| tile={args.tile if augment else 0} -> imgsz={args.imgsz}")
     dl = DataLoader(ds, batch_size=args.batch, shuffle=True,
                     num_workers=args.workers, collate_fn=collate,
                     pin_memory=(device == "cuda"))
