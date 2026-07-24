@@ -34,3 +34,19 @@ data_src/
 *.log
 watch_training.sh
 TRAINING_DONE.txt
+
+# --- SECURITY: quarantined / suspected-malicious artifacts, NEVER commit ---
+*_QUARANTINE_*/
+.venv_QUARANTINE_trojaned/
+
+# --- raw dataset directories & archives (huge, untrusted; hash-pin instead) ---
+/VisDrone2019-DET-train/
+/VisDrone2019-DET-val/
+*.zip
+
+# --- media / inference outputs (annotated videos, sample frames) ---
+*.mp4
+*.avi
+*.mov
+*.mkv
+webcam_frames/
