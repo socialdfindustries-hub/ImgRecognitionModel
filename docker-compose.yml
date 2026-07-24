@@ -1,0 +1,37 @@
+# CPU pipeline on Colima. Start Colima first:  colima start
+#
+# The repo is bind-mounted at /app so code edits are live and no artifacts are
+# baked into the image. keys/, data/, dist/, data_src/ ride in via the same
+# mount — the private signing key stays on the host, never in an image layer.
+#
+# Usage:
+#   docker compose run --rm pipeline python scripts/test_secure_io.py
+#   docker compose run --rm pipeline python scripts/smoke_train.py
+#   docker compose run --rm pipeline python scripts/ingest_dataset.py --src data_src/val --num-classes 10 --val-frac 1.0
+#   docker compose run --rm pipeline python -m src.evaluate --weights dist/detector.safetensors \
+#       --num-classes 10 --images data/val/images --labels data/val/labels --imgsz 768
+#   docker compose run --rm audit          # pip-audit the pinned deps
+services:
+  pipeline:
+    build: .
+    image: imgrecog-pipeline:cpu
+    working_dir: /app
+    volumes:
+      # Bind the repo, but keep the host's Mac-arch .venv out of the container.
+      - .:/app
+      - /app/.venv
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OMP_NUM_THREADS=4      # match Colima's 4 vCPUs
+    # Default command just proves the image is healthy; override per invocation.
+    command: ["python", "-c", "import torch; print('OK', torch.__version__)"]
+
+  # Supply-chain gate — run before any deploy.
+  audit:
+    build: .
+    image: imgrecog-pipeline:cpu
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/.venv
+    command: ["pip-audit", "-r", "requirements.txt"]

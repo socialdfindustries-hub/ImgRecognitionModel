@@ -1,0 +1,22 @@
+# Keep the build context tiny — the repo is bind-mounted at runtime, so nothing
+# here needs to enter an image layer. Critically: signing keys and weights must
+# NEVER be baked into an image.
+.git
+.venv
+venv
+__pycache__
+*.pyc
+keys
+dist
+data
+data_src
+*.safetensors
+*.onnx
+*.engine
+*.pt
+*.pth
+*_ed25519
+*.pem
+*.log
+scratch_*.jpg
+prediction*.jpg
